@@ -89,7 +89,7 @@ app.post('/alterar-pin', (req, res) => {
 // --- ÁREA DE GESTÃO / IMPORTAÇÃO (Exclusivo r.pereira) ---
 app.get('/admin/importar', apenasAdmin, (req, res) => {
     db.all(`
-        h.*, f.nome_completo, f.username 
+        SELECT h.*, f.nome_completo, f.username 
         FROM horarios_previstos h 
         JOIN funcionarios f ON h.funcionario_id = f.id 
         ORDER BY h.data DESC, h.entrada_prevista DESC
@@ -202,7 +202,7 @@ app.get('/portal', autenticar, (req, res) => {
     const userId = req.session.user.id;
 
     db.all('SELECT * FROM picagens WHERE funcionario_id = ? ORDER BY id DESC LIMIT 15', [userId], (err, picagens) => {
-        db.all('SELECT * FROM horarios_previstos WHERE funcionario_id = ? ORDER BY data DESC LIMIT 10', [userId], (err, previstos) => {
+        db.all('SELECT * FROM horarios_previstos WHERE funcionario_id = ? ORDER BY data DESC, entrada_prevista DESC LIMIT 15', [userId], (err, previstos) => {
             
             const resumo = (previstos || []).map(hp => {
                 const picagensDia = (picagens || []).filter(p => p.timestamp.startsWith(hp.data));
