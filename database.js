@@ -53,5 +53,17 @@ db.run(`
         }
     });
 });
-
+    // Tabela de Logs de Auditoria de Edições
+    db.run(`
+        CREATE TABLE IF NOT EXISTS logs_alteracoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            funcionario_id INTEGER,
+            admin_ou_user TEXT, -- quem alterou (username)
+            acao TEXT,          -- ex: 'EDITOU_PICAGEM', 'APAGOU_PICAGEM', 'ADICIONOU_PICAGEM'
+            detalhes TEXT,      -- descrição da alteração
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (funcionario_id) REFERENCES funcionarios(id)
+        )
+    `);
+    
 module.exports = db;

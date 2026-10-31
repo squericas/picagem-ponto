@@ -319,6 +319,59 @@ app.get('/exportar-horas', autenticar, (req, res) => {
         });
     });
 });
+// --- CORREÇÃO / EDIÇÃO DE PICAGENS PELO PRÓPRIO UTILIZADOR ---
+app.post('/portal/editar-picagem', autenticar, (req, res) => {
+    const { picagem_id, novo_tipo, nova_hora } = req.body;
+    const userId = req.session.user.id;
+
+    // Verificar se a picagem pertence mesmo ao utilizador
+    db.get('SELECT * FROM picagens WHERE id = ? AND funcionario_id = ?', [picagem_id, userId], (err, picagem) => {
+        if (!picagem) {
+            return res.send(`<script>alert('Erro: Picagem não encontrada ou sem permissão.'); window.location.href='/portal';</script>`);
+        }
+
+        const dataOriginal = picagem.timestamp.split(' ')[0];
+        const novoTimestamp = `${dataOriginal} ${nova_hora}:00`;
+
+        db.run('UPDATE picagens SET tipo = ?, timestamp = ? WHERE id = ?', [novo_tipo, novoTimestamp, picagem_id], (err) => {
+            if (err) {
+                return res.send(`<script>alert('Erro ao atualizar picagem.'); window.location.href='/portal';</script>`);
+            }
+
+            // Registar em Log
+            const detalhesLog = `Utilizador ${req.session.user.username} alterou picagem ID ${picagem_id} de '${picagem.tipo} (${picagem.timestamp})' para '${novo_tipo} (${novoTimestamp})'`;
+            db.run('INSERT INTO logs_alteracoes (funcionario_id, admin_ou_user, acao, detalhes) VALUES (?, ?, ?, ?)',
+                [userId, req.session.user.username, 'EDITOU_PICAGEM', detalhesLog]);
+
+            res.send(`<script>alert('Picagem atualizada com sucesso!'); window.location.href='/portal';</script>`);
+        });
+    });
+});
+
+// --- ADICIONAR PICAGEM EM FALTA PELO UTILIZADOR ---
+app.post('/portal/adicionar-picagem', autenticar, (req, res) => {
+    const { data, tipo, hora } = req.body;
+    const userId = req.session.user.id;
+
+    if (!data || !tipo || !hora) {
+        return res.send(`<script>alert('Preencha todos os campos para adicionar a picagem.'); window.location.href='/portal';</script>`);
+    }
+
+    const timestampCompleto = `${data} ${hora}:00`;
+
+    db.run('INSERT INTO picagens (funcionario_id, tipo, timestamp) VALUES (?, ?, ?)', [userId, tipo, timestampCompleto], function(err) {
+        if (err) {
+            return res.send(`<script>alert('Erro ao adicionar picagem.'); window.location.href='/portal';</script>`);
+        }
+
+        // Registar em Log
+        const detalhesLog = `Utilizador ${req.session.user.username} adicionou picagem manual: ${tipo} a ${timestampCompleto}`;
+        db.run('INSERT INTO logs_alteracoes (funcionario_id, admin_ou_user, acao, detalhes) VALUES (?, ?, ?, ?)',
+            [userId, req.session.user.username, 'ADICIONOU_PICAGEM', detalhesLog]);
+
+        res.send(`<script>alert('Picagem adicionada com sucesso!'); window.location.href='/portal';</script>`);
+    });
+});
 // --- VALIDAÇÕES E FEEDBACK INSTANTÂNEO DE PICAGEM ---
 app.post('/picar', autenticar, (req, res) => {
     const { tipo } = req.body;
@@ -407,7 +460,17 @@ app.post('/picar', autenticar, (req, res) => {
         });
     });
 });
-
+app.get('/admin/logs', apenasAdmin, (req, res) => {
+    db.all(`
+        SELECT l.*, f.nome_completo, f.username 
+        FROM logs_alteracoes l 
+        JOIN funcionarios f ON l.funcionario_id = f.id 
+        ORDER BY l.timestamp DESC LIMIT 100
+    `, [], (err, logs) => {
+        // Podes renderizar uma vista simples ou enviar como JSON/tabela
+        res.render('logs', { logs: logs || [] });
+    });
+});
 app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/login');
