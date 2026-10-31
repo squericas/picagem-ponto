@@ -1,5 +1,9 @@
 const sqlite3 = require('sqlite3').verbose();
-const db = new sqlite3.Database('./ponto.db');
+const path = require('path');
+
+// O resto da ligação à base de dados com caminho absoluto:
+const dbPath = path.join(__dirname, 'ponto.db');
+const db = new sqlite3.Database(dbPath);
 
 db.serialize(() => {
     // Tabela de Funcionários
