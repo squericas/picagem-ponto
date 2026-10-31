@@ -246,6 +246,79 @@ app.get('/portal', autenticar, (req, res) => {
     });
 });
 
+// --- EXPORTAÇÃO DE HORAS INDIVIDUAL (Ciclo 26 a 26) ---
+app.get('/exportar-horas', autenticar, (req, res) => {
+    const isAdm = req.session.user.username === 'r.pereira';
+    // Se for admin e passar um funcionario_id na query, exporta para esse; caso contrário, usa o user da sessão
+    const funcionarioId = (isAdm && req.query.funcionario_id) ? req.query.funcionario_id : req.session.user.id;
+
+    const hoje = new Date();
+    const ano = parseInt(req.query.ano) || hoje.getFullYear();
+    const mes = parseInt(req.query.mes) || (hoje.getMonth() + 1);
+
+    const mesAnterior = mes === 1 ? 12 : mes - 1;
+    const anoAnterior = mes === 1 ? ano - 1 : ano;
+
+    const dataInicio = `${anoAnterior}-${String(mesAnterior).padStart(2, '0')}-26`;
+    const dataFim = `${ano}-${String(mes).padStart(2, '0')}-26`;
+
+    db.get('SELECT * FROM funcionarios WHERE id = ?', [funcionarioId], (err, func) => {
+        if (!func) return res.status(404).send("Funcionário não encontrado.");
+
+        db.all(`
+            SELECT h.* FROM horarios_previstos h 
+            WHERE h.funcionario_id = ? AND h.data BETWEEN ? AND ?
+            ORDER BY h.data ASC, h.entrada_prevista ASC
+        `, [funcionarioId, dataInicio, dataFim], (err, horarios) => {
+            
+            db.all(`
+                SELECT * FROM picagens 
+                WHERE funcionario_id = ? AND timestamp >= ? AND timestamp <= ?
+            `, [funcionarioId, `${dataInicio} 00:00:00`, `${dataFim} 23:59:59`], (err, picagens) => {
+
+                let csvContent = `Relatorio de Horas - ${func.nome_completo} (@${func.username})\n`;
+                csvContent += `Periodo: ${dataInicio} a ${dataFim}\n\n`;
+                csvContent += "Data;Entrada Prevista;Saida Prevista;Entrada Real;Saida Real;Refeicao;Saldo (Horas)\n";
+
+                (horarios || []).forEach(hp => {
+                    const picagensDia = (picagens || []).filter(p => p.timestamp.startsWith(hp.data));
+                    const entrada = picagensDia.find(p => p.tipo === 'ENTRADA');
+                    const saida = picagensDia.find(p => p.tipo === 'SAIDA');
+
+                    let realEntrada = "-";
+                    let realSaida = "-";
+                    let desvioFmt = "Falta Registo";
+
+                    if (entrada && saida) {
+                        realEntrada = entrada.timestamp.substring(11, 16);
+                        realSaida = saida.timestamp.substring(11, 16);
+
+                        const [hEntPrev, mEntPrev] = hp.entrada_prevista.split(':').map(Number);
+                        const [hSaiPrev, mSaiPrev] = hp.saida_prevista.split(':').map(Number);
+                        const turnoPassaMeiaNoite = (hSaiPrev * 60 + mSaiPrev) <= (hEntPrev * 60 + mEntPrev);
+
+                        const descontoRefeicao = hp.refeicao === 1 ? 30 : 0;
+                        const minPrevistos = calcularMinutosEntre(hp.entrada_prevista, hp.saida_prevista, turnoPassaMeiaNoite) - (hp.pausa_minutos || 0) - descontoRefeicao;
+                        const minReais = calcularMinutosEntre(realEntrada, realSaida, turnoPassaMeiaNoite) - (hp.pausa_minutos || 0) - descontoRefeicao;
+
+                        const desvioMin = minReais - minPrevistos;
+                        const sinal = desvioMin > 0 ? '+' : (desvioMin < 0 ? '-' : '');
+                        const horas = Math.floor(Math.abs(desvioMin) / 60);
+                        const mins = Math.abs(desvioMin) % 60;
+                        desvioFmt = `${sinal}${horas}h ${mins}m`;
+                    }
+
+                    const refeicaoStr = hp.refeicao === 1 ? 'Sim' : 'Nao';
+                    csvContent += `"${hp.data}";"${hp.entrada_prevista}";"${hp.saida_prevista}";"${realEntrada}";"${realSaida}";"${refeicaoStr}";"${desvioFmt}"\n`;
+                });
+
+                res.header('Content-Type', 'text/csv; charset=utf-8');
+                res.attachment(`relatorio_${func.username}_${dataInicio}_a_${dataFim}.csv`);
+                res.send('\uFEFF' + csvContent);
+            });
+        });
+    });
+});
 // --- VALIDAÇÕES E FEEDBACK INSTANTÂNEO DE PICAGEM ---
 app.post('/picar', autenticar, (req, res) => {
     const { tipo } = req.body;
