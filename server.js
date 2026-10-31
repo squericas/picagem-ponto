@@ -30,6 +30,18 @@ function apenasAdmin(req, res, next) {
     next();
 }
 
+// --- FUNÇÃO DE CÁLCULO DE TEMPO (Com suporte a fechos após meia-noite) ---
+function calcularMinutosEntre(horaIni, horaFim, cruzaMeiaNoite = false) {
+    const [h1, m1] = horaIni.split(':').map(Number);
+    const [h2, m2] = horaFim.split(':').map(Number);
+    let min1 = h1 * 60 + m1;
+    let min2 = h2 * 60 + m2;
+    if (cruzaMeiaNoite || min2 <= min1) {
+        min2 += 24 * 60;
+    }
+    return min2 - min1;
+}
+
 // --- AUTENTICAÇÃO INTELIGENTE (Criação automática se PIN for 0000) ---
 app.get('/login', (req, res) => res.render('login', { erro: null }));
 
@@ -98,7 +110,6 @@ app.get('/admin/importar', apenasAdmin, (req, res) => {
     });
 });
 
-// Importação inteligente com suporte a horários repartidos e criação automática de funcionários
 app.post('/admin/importar', apenasAdmin, (req, res) => {
     try {
         const dados = JSON.parse(req.body.json_horario);
@@ -127,7 +138,6 @@ app.post('/admin/importar', apenasAdmin, (req, res) => {
             });
 
             function inserirOuAtualizarTurno(funcId, item, temRefeicao, entradaPrev, saidaPrev) {
-                // Suporte a horários repartidos: verifica por funcionário, data E hora de entrada exata
                 db.get(`SELECT id FROM horarios_previstos WHERE funcionario_id = ? AND data = ? AND entrada_prevista = ?`, 
                     [funcId, item.data, entradaPrev], (err, existente) => {
                     if (existente) {
@@ -185,17 +195,16 @@ app.post('/admin/horario/editar/:id', apenasAdmin, (req, res) => {
     );
 });
 
-// --- FUNÇÃO DE CÁLCULO DE TEMPO (Com suporte a fechos após meia-noite) ---
-function calcularMinutosEntre(horaIni, horaFim, cruzaMeiaNoite = false) {
-    const [h1, m1] = horaIni.split(':').map(Number);
-    const [h2, m2] = horaFim.split(':').map(Number);
-    let min1 = h1 * 60 + m1;
-    let min2 = h2 * 60 + m2;
-    if (cruzaMeiaNoite || min2 <= min1) {
-        min2 += 24 * 60;
-    }
-    return min2 - min1;
-}
+app.get('/admin/logs', apenasAdmin, (req, res) => {
+    db.all(`
+        SELECT l.*, f.nome_completo, f.username 
+        FROM logs_alteracoes l 
+        JOIN funcionarios f ON l.funcionario_id = f.id 
+        ORDER BY l.timestamp DESC LIMIT 100
+    `, [], (err, logs) => {
+        res.render('logs', { logs: logs || [] });
+    });
+});
 
 // --- PORTAL DO FUNCIONÁRIO ---
 app.get('/portal', autenticar, (req, res) => {
@@ -246,109 +255,7 @@ app.get('/portal', autenticar, (req, res) => {
     });
 });
 
-// --- EXPORTAÇÃO DE HORAS INDIVIDUAL (Ciclo 26 a 26) ---
-app.get('/exportar-horas', autenticar, (req, res) => {
-    const isAdm = req.session.user.username === 'r.pereira';
-    // Se for admin e passar um funcionario_id na query, exporta para esse; caso contrário, usa o user da sessão
-    const funcionarioId = (isAdm && req.query.funcionario_id) ? req.query.funcionario_id : req.session.user.id;
-
-    const hoje = new Date();
-    const ano = parseInt(req.query.ano) || hoje.getFullYear();
-    const mes = parseInt(req.query.mes) || (hoje.getMonth() + 1);
-
-    const mesAnterior = mes === 1 ? 12 : mes - 1;
-    const anoAnterior = mes === 1 ? ano - 1 : ano;
-
-    const dataInicio = `${anoAnterior}-${String(mesAnterior).padStart(2, '0')}-26`;
-    const dataFim = `${ano}-${String(mes).padStart(2, '0')}-26`;
-
-    db.get('SELECT * FROM funcionarios WHERE id = ?', [funcionarioId], (err, func) => {
-        if (!func) return res.status(404).send("Funcionário não encontrado.");
-
-        db.all(`
-            SELECT h.* FROM horarios_previstos h 
-            WHERE h.funcionario_id = ? AND h.data BETWEEN ? AND ?
-            ORDER BY h.data ASC, h.entrada_prevista ASC
-        `, [funcionarioId, dataInicio, dataFim], (err, horarios) => {
-            
-            db.all(`
-                SELECT * FROM picagens 
-                WHERE funcionario_id = ? AND timestamp >= ? AND timestamp <= ?
-            `, [funcionarioId, `${dataInicio} 00:00:00`, `${dataFim} 23:59:59`], (err, picagens) => {
-
-                let csvContent = `Relatorio de Horas - ${func.nome_completo} (@${func.username})\n`;
-                csvContent += `Periodo: ${dataInicio} a ${dataFim}\n\n`;
-                csvContent += "Data;Entrada Prevista;Saida Prevista;Entrada Real;Saida Real;Refeicao;Saldo (Horas)\n";
-
-                (horarios || []).forEach(hp => {
-                    const picagensDia = (picagens || []).filter(p => p.timestamp.startsWith(hp.data));
-                    const entrada = picagensDia.find(p => p.tipo === 'ENTRADA');
-                    const saida = picagensDia.find(p => p.tipo === 'SAIDA');
-
-                    let realEntrada = "-";
-                    let realSaida = "-";
-                    let desvioFmt = "Falta Registo";
-
-                    if (entrada && saida) {
-                        realEntrada = entrada.timestamp.substring(11, 16);
-                        realSaida = saida.timestamp.substring(11, 16);
-
-                        const [hEntPrev, mEntPrev] = hp.entrada_prevista.split(':').map(Number);
-                        const [hSaiPrev, mSaiPrev] = hp.saida_prevista.split(':').map(Number);
-                        const turnoPassaMeiaNoite = (hSaiPrev * 60 + mSaiPrev) <= (hEntPrev * 60 + mEntPrev);
-
-                        const descontoRefeicao = hp.refeicao === 1 ? 30 : 0;
-                        const minPrevistos = calcularMinutosEntre(hp.entrada_prevista, hp.saida_prevista, turnoPassaMeiaNoite) - (hp.pausa_minutos || 0) - descontoRefeicao;
-                        const minReais = calcularMinutosEntre(realEntrada, realSaida, turnoPassaMeiaNoite) - (hp.pausa_minutos || 0) - descontoRefeicao;
-
-                        const desvioMin = minReais - minPrevistos;
-                        const sinal = desvioMin > 0 ? '+' : (desvioMin < 0 ? '-' : '');
-                        const horas = Math.floor(Math.abs(desvioMin) / 60);
-                        const mins = Math.abs(desvioMin) % 60;
-                        desvioFmt = `${sinal}${horas}h ${mins}m`;
-                    }
-
-                    const refeicaoStr = hp.refeicao === 1 ? 'Sim' : 'Nao';
-                    csvContent += `"${hp.data}";"${hp.entrada_prevista}";"${hp.saida_prevista}";"${realEntrada}";"${realSaida}";"${refeicaoStr}";"${desvioFmt}"\n`;
-                });
-
-                res.header('Content-Type', 'text/csv; charset=utf-8');
-                res.attachment(`relatorio_${func.username}_${dataInicio}_a_${dataFim}.csv`);
-                res.send('\uFEFF' + csvContent);
-            });
-        });
-    });
-});
-// --- CORREÇÃO / EDIÇÃO DE PICAGENS PELO PRÓPRIO UTILIZADOR ---
-app.post('/portal/editar-picagem', autenticar, (req, res) => {
-    const { picagem_id, novo_tipo, nova_hora } = req.body;
-    const userId = req.session.user.id;
-
-    // Verificar se a picagem pertence mesmo ao utilizador
-    db.get('SELECT * FROM picagens WHERE id = ? AND funcionario_id = ?', [picagem_id, userId], (err, picagem) => {
-        if (!picagem) {
-            return res.send(`<script>alert('Erro: Picagem não encontrada ou sem permissão.'); window.location.href='/portal';</script>`);
-        }
-
-        const dataOriginal = picagem.timestamp.split(' ')[0];
-        const novoTimestamp = `${dataOriginal} ${nova_hora}:00`;
-
-        db.run('UPDATE picagens SET tipo = ?, timestamp = ? WHERE id = ?', [novo_tipo, novoTimestamp, picagem_id], (err) => {
-            if (err) {
-                return res.send(`<script>alert('Erro ao atualizar picagem.'); window.location.href='/portal';</script>`);
-            }
-
-            // Registar em Log
-            const detalhesLog = `Utilizador ${req.session.user.username} alterou picagem ID ${picagem_id} de '${picagem.tipo} (${picagem.timestamp})' para '${novo_tipo} (${novoTimestamp})'`;
-            db.run('INSERT INTO logs_alteracoes (funcionario_id, admin_ou_user, acao, detalhes) VALUES (?, ?, ?, ?)',
-                [userId, req.session.user.username, 'EDITOU_PICAGEM', detalhesLog]);
-
-            res.send(`<script>alert('Picagem atualizada com sucesso!'); window.location.href='/portal';</script>`);
-        });
-    });
-});
-
-// --- ADICIONAR PICAGEM EM FALTA PELO UTILIZADOR ---
+// --- GESTÃO DE PICAGENS PELO UTILIZADOR (Adicionar, Editar, Apagar) ---
 app.post('/portal/adicionar-picagem', autenticar, (req, res) => {
     const { data, tipo, hora } = req.body;
     const userId = req.session.user.id;
@@ -364,7 +271,6 @@ app.post('/portal/adicionar-picagem', autenticar, (req, res) => {
             return res.send(`<script>alert('Erro ao adicionar picagem.'); window.location.href='/portal';</script>`);
         }
 
-        // Registar em Log
         const detalhesLog = `Utilizador ${req.session.user.username} adicionou picagem manual: ${tipo} a ${timestampCompleto}`;
         db.run('INSERT INTO logs_alteracoes (funcionario_id, admin_ou_user, acao, detalhes) VALUES (?, ?, ?, ?)',
             [userId, req.session.user.username, 'ADICIONOU_PICAGEM', detalhesLog]);
@@ -372,6 +278,56 @@ app.post('/portal/adicionar-picagem', autenticar, (req, res) => {
         res.send(`<script>alert('Picagem adicionada com sucesso!'); window.location.href='/portal';</script>`);
     });
 });
+
+app.post('/portal/editar-picagem', autenticar, (req, res) => {
+    const { picagem_id, novo_tipo, nova_hora } = req.body;
+    const userId = req.session.user.id;
+
+    db.get('SELECT * FROM picagens WHERE id = ? AND funcionario_id = ?', [picagem_id, userId], (err, picagem) => {
+        if (!picagem) {
+            return res.send(`<script>alert('Erro: Picagem não encontrada ou sem permissão.'); window.location.href='/portal';</script>`);
+        }
+
+        const dataOriginal = picagem.timestamp.split(' ')[0];
+        const novoTimestamp = `${dataOriginal} ${nova_hora}:00`;
+
+        db.run('UPDATE picagens SET tipo = ?, timestamp = ? WHERE id = ?', [novo_tipo, novoTimestamp, picagem_id], (err) => {
+            if (err) {
+                return res.send(`<script>alert('Erro ao atualizar picagem.'); window.location.href='/portal';</script>`);
+            }
+
+            const detalhesLog = `Utilizador ${req.session.user.username} alterou picagem ID ${picagem_id} de '${picagem.tipo} (${picagem.timestamp})' para '${novo_tipo} (${novoTimestamp})'`;
+            db.run('INSERT INTO logs_alteracoes (funcionario_id, admin_ou_user, acao, detalhes) VALUES (?, ?, ?, ?)',
+                [userId, req.session.user.username, 'EDITOU_PICAGEM', detalhesLog]);
+
+            res.send(`<script>alert('Picagem atualizada com sucesso!'); window.location.href='/portal';</script>`);
+        });
+    });
+});
+
+app.post('/portal/apagar-picagem', autenticar, (req, res) => {
+    const { picagem_id } = req.body;
+    const userId = req.session.user.id;
+
+    db.get('SELECT * FROM picagens WHERE id = ? AND funcionario_id = ?', [picagem_id, userId], (err, picagem) => {
+        if (!picagem) {
+            return res.send(`<script>alert('Erro: Picagem não encontrada ou sem permissão.'); window.location.href='/portal';</script>`);
+        }
+
+        db.run('DELETE FROM picagens WHERE id = ?', [picagem_id], (err) => {
+            if (err) {
+                return res.send(`<script>alert('Erro ao apagar picagem.'); window.location.href='/portal';</script>`);
+            }
+
+            const detalhesLog = `Utilizador ${req.session.user.username} apagou picagem ID ${picagem_id} (${picagem.tipo} - ${picagem.timestamp})`;
+            db.run('INSERT INTO logs_alteracoes (funcionario_id, admin_ou_user, acao, detalhes) VALUES (?, ?, ?, ?)',
+                [userId, req.session.user.username, 'APAGOU_PICAGEM', detalhesLog]);
+
+            res.send(`<script>alert('Picagem apagada com sucesso!'); window.location.href='/portal';</script>`);
+        });
+    });
+});
+
 // --- VALIDAÇÕES E FEEDBACK INSTANTÂNEO DE PICAGEM ---
 app.post('/picar', autenticar, (req, res) => {
     const { tipo } = req.body;
@@ -460,17 +416,80 @@ app.post('/picar', autenticar, (req, res) => {
         });
     });
 });
-app.get('/admin/logs', apenasAdmin, (req, res) => {
-    db.all(`
-        SELECT l.*, f.nome_completo, f.username 
-        FROM logs_alteracoes l 
-        JOIN funcionarios f ON l.funcionario_id = f.id 
-        ORDER BY l.timestamp DESC LIMIT 100
-    `, [], (err, logs) => {
-        // Podes renderizar uma vista simples ou enviar como JSON/tabela
-        res.render('logs', { logs: logs || [] });
+
+// --- EXPORTAÇÃO DE HORAS INDIVIDUAL (Ciclo 26 a 26) ---
+app.get('/exportar-horas', autenticar, (req, res) => {
+    const isAdm = req.session.user.username === 'r.pereira';
+    const funcionarioId = (isAdm && req.query.funcionario_id) ? req.query.funcionario_id : req.session.user.id;
+
+    const hoje = new Date();
+    const ano = parseInt(req.query.ano) || hoje.getFullYear();
+    const mes = parseInt(req.query.mes) || (hoje.getMonth() + 1);
+
+    const mesAnterior = mes === 1 ? 12 : mes - 1;
+    const anoAnterior = mes === 1 ? ano - 1 : ano;
+
+    const dataInicio = `${anoAnterior}-${String(mesAnterior).padStart(2, '0')}-26`;
+    const dataFim = `${ano}-${String(mes).padStart(2, '0')}-26`;
+
+    db.get('SELECT * FROM funcionarios WHERE id = ?', [funcionarioId], (err, func) => {
+        if (!func) return res.status(404).send("Funcionário não encontrado.");
+
+        db.all(`
+            SELECT h.* FROM horarios_previstos h 
+            WHERE h.funcionario_id = ? AND h.data BETWEEN ? AND ?
+            ORDER BY h.data ASC, h.entrada_prevista ASC
+        `, [funcionarioId, dataInicio, dataFim], (err, horarios) => {
+            
+            db.all(`
+                SELECT * FROM picagens 
+                WHERE funcionario_id = ? AND timestamp >= ? AND timestamp <= ?
+            `, [funcionarioId, `${dataInicio} 00:00:00`, `${dataFim} 23:59:59`], (err, picagens) => {
+
+                let csvContent = `Relatorio de Horas - ${func.nome_completo} (@${func.username})\n`;
+                csvContent += `Periodo: ${dataInicio} a ${dataFim}\n\n`;
+                csvContent += "Data;Entrada Prevista;Saida Prevista;Entrada Real;Saida Real;Refeicao;Saldo (Horas)\n";
+
+                (horarios || []).forEach(hp => {
+                    const picagensDia = (picagens || []).filter(p => p.timestamp.startsWith(hp.data));
+                    const entrada = picagensDia.find(p => p.tipo === 'ENTRADA');
+                    const saida = picagensDia.find(p => p.tipo === 'SAIDA');
+
+                    let realEntrada = "-";
+                    let realSaida = "-";
+                    let desvioFmt = "Falta Registo";
+
+                    if (entrada && saida) {
+                        realEntrada = entrada.timestamp.substring(11, 16);
+                        realSaida = saida.timestamp.substring(11, 16);
+
+                        const [hEntPrev, mEntPrev] = hp.entrada_prevista.split(':').map(Number);
+                        const [hSaiPrev, mSaiPrev] = hp.saida_prevista.split(':').map(Number);
+                        const turnoPassaMeiaNoite = (hSaiPrev * 60 + mSaiPrev) <= (hEntPrev * 60 + mEntPrev);
+
+                        const descontoRefeicao = hp.refeicao === 1 ? 30 : 0;
+                        const minPrevistos = calcularMinutosEntre(hp.entrada_prevista, hp.saida_prevista, turnoPassaMeiaNoite) - (hp.pausa_minutos || 0) - descontoRefeicao;
+                        const minReais = calcularMinutosEntre(realEntrada, realSaida, turnoPassaMeiaNoite) - (hp.pausa_minutos || 0) - descontoRefeicao;
+
+                        const desvioMin = minReais - minPrevistos;
+                        const sinal = desvioMin > 0 ? '+' : (desvioMin < 0 ? '-' : '');
+                        const horas = Math.floor(Math.abs(desvioMin) / 60);
+                        const mins = Math.abs(desvioMin) % 60;
+                        desvioFmt = `${sinal}${horas}h ${mins}m`;
+                    }
+
+                    const refeicaoStr = hp.refeicao === 1 ? 'Sim' : 'Nao';
+                    csvContent += `"${hp.data}";"${hp.entrada_prevista}";"${hp.saida_prevista}";"${realEntrada}";"${realSaida}";"${refeicaoStr}";"${desvioFmt}"\n`;
+                });
+
+                res.header('Content-Type', 'text/csv; charset=utf-8');
+                res.attachment(`relatorio_${func.username}_${dataInicio}_a_${dataFim}.csv`);
+                res.send('\uFEFF' + csvContent);
+            });
+        });
     });
 });
+
 app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/login');
