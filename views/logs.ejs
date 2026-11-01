@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logs de Auditoria - Admin</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; color: #333; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; }
+        .back-link { display: inline-block; margin-bottom: 15px; color: #0056b3; text-decoration: none; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #fafafa; color: #555; }
+        .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; color: white; }
+        .bg-edit { background: #ffc107; color: #333; }
+        .bg-add { background: #28a745; }
+        .bg-del { background: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/admin/importar" class="back-link">← Voltar ao Painel de Importação</a>
+        <h2>📜 Logs de Auditoria de Alterações</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Data/Hora</th>
+                    <th>Utilizador (@username)</th>
+                    <th>Ação</th>
+                    <th>Detalhes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <% if (logs && logs.length > 0) { %>
+                    <% logs.forEach(l => { %>
+                        <tr>
+                            <td><%= l.timestamp %></td>
+                            <td><strong><%= l.nome_completo %></strong> (<%= l.username %>)</td>
+                            <td>
+                                <span class="badge <%= l.acao.includes('EDITOU') ? 'bg-edit' : (l.acao.includes('ADICIONOU') ? 'bg-add' : 'bg-del') %>">
+                                    <%= l.acao %>
+                                </span>
+                            </td>
+                            <td><%= l.detalhes %></td>
+                        </tr>
+                    <% }) %>
+                <% } else { %>
+                    <tr>
+                        <td colspan="4" style="text-align: center; color: #777;">Sem logs registados.</td>
+                    </tr>
+                <% } %>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
