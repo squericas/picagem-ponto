@@ -11,7 +11,8 @@ app.use(session({
     resave: false,
     saveUninitialized: false
 }));
-
+// Servir ficheiros estáticos
+app.use(express.static('public'));
 // Redirecionar raiz para o login
 app.get('/', (req, res) => res.redirect('/login'));
 

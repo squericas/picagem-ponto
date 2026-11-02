@@ -1,41 +1,65 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
+    <script>
+        // Aplicar o tema guardado ANTES da página renderizar para evitar flash branco
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+    </script>
+    <link rel="stylesheet" href="/style.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal do Funcionário</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f9; margin: 0; padding: 15px; color: #333; }
-        .header { display: flex; justify-content: space-between; align-items: center; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); margin-bottom: 15px; }
-        .header h2 { margin: 0; font-size: 18px; color: #333; }
-        .header p { margin: 5px 0 0 0; font-size: 13px; color: #666; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color, #f4f6f9); margin: 0; padding: 15px; color: var(--text-color, #333); }
+        .header { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg, white); padding: 15px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        .header h2 { margin: 0; font-size: 18px; color: var(--text-color, #333); }
+        .header p { margin: 5px 0 0 0; font-size: 13px; color: var(--text-muted, #666); }
         .logout { color: #d9534f; text-decoration: none; font-weight: bold; font-size: 14px; }
         
-        .ponto-box { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); text-align: center; margin-bottom: 15px; }
+        .ponto-box { background: var(--card-bg, white); padding: 20px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); text-align: center; margin-bottom: 15px; }
         .btn-ponto { width: 100%; padding: 16px; font-size: 18px; font-weight: bold; color: white; border: none; border-radius: 8px; cursor: pointer; margin-bottom: 10px; }
         .btn-entrada { background: #28a745; }
         .btn-saida { background: #dc3545; }
         
-        .section { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); margin-bottom: 15px; overflow-x: auto; }
-        h3 { margin-top: 0; font-size: 16px; color: #444; border-bottom: 2px solid #f0f0f0; padding-bottom: 8px; }
+        .section { background: var(--card-bg, white); padding: 15px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); margin-bottom: 15px; overflow-x: auto; }
+        h3 { margin-top: 0; font-size: 16px; color: var(--text-color, #444); border-bottom: 2px solid var(--border-color, #f0f0f0); padding-bottom: 8px; }
         
-        table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 300px; }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background: #fafafa; color: #555; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 300px; color: var(--text-color, #333); }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border-color, #eee); }
+        th { background: var(--table-header, #fafafa); color: var(--text-color, #555); }
         
         .admin-link { display: inline-block; background: #e7f1ff; color: #0056b3; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 13px; margin-bottom: 15px; }
         
         .form-group { margin-bottom: 10px; text-align: left; }
-        .form-group label { display: block; font-size: 12px; color: #666; margin-bottom: 3px; }
-        .form-control { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 13px; }
+        .form-group label { display: block; font-size: 12px; color: var(--text-muted, #666); margin-bottom: 3px; }
+        .form-control { width: 100%; padding: 8px; border: 1px solid var(--border-color, #ccc); background: var(--card-bg, white); color: var(--text-color, #333); border-radius: 6px; box-sizing: border-box; font-size: 13px; }
         .btn-submit { background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 14px; }
         .btn-submit:hover { background: #0056b3; }
 
-        .picagem-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 13px; }
+        .picagem-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color, #eee); font-size: 13px; }
         .picagem-actions { display: flex; gap: 6px; }
         .btn-acao { padding: 4px 8px; font-size: 11px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; color: white; text-decoration: none; }
         .btn-editar { background: #ffc107; color: #333; }
         .btn-apagar { background: #dc3545; }
+
+        /* Estilo para o botão de tema no cabeçalho */
+        #theme-toggle {
+            background: var(--border-color, #ddd);
+            border: none;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        #theme-toggle:hover {
+            opacity: 0.8;
+        }
     </style>
 </head>
 <body>
@@ -44,8 +68,36 @@
             <h2><%= user.nome_completo %></h2>
             <p>@<%= user.username %></p>
         </div>
-        <a href="/logout" class="logout">Sair</a>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <!-- Botão de Alternância de Tema -->
+            <button id="theme-toggle" onclick="toggleGlobalTheme()" title="Alternar Modo Noturno">🌙</button>
+            <a href="/logout" class="logout">Sair</a>
+        </div>
     </div>
+
+    <script>
+        // Atualizar o ícone do botão consoante o tema atual assim que a página carregar
+        window.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('theme-toggle');
+            if (btn) {
+                const current = document.documentElement.getAttribute('data-theme');
+                btn.textContent = current === 'dark' ? '☀️' : '🌙';
+            }
+        });
+
+        function toggleGlobalTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+
+            const btn = document.getElementById('theme-toggle');
+            if (btn) {
+                btn.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+            }
+        }
+    </script>
 
     <% if (user.username === 'r.pereira') { %>
         <a href="/admin/importar" class="admin-link">⚙️ Gerir e Importar Escalas (Admin)</a>
@@ -104,14 +156,14 @@
                             <td><%= r.data %></td>
                             <td><%= r.previsto %></td>
                             <td><%= r.real %></td>
-                            <td style="font-weight: bold; color: <%= r.minutos_desvio > 0 ? '#28a745' : (r.minutos_desvio < 0 ? '#dc3545' : '#333') %>;">
+                            <td style="font-weight: bold; color: <%= r.minutos_desvio > 0 ? '#28a745' : (r.minutos_desvio < 0 ? '#dc3545' : 'inherit') %>;">
                                 <%= r.minutos_desvio > 0 ? '+' : '' %><%= r.desvio_formatado %>
                             </td>
                         </tr>
                     <% }) %>
                 <% } else { %>
                     <tr>
-                        <td colspan="4" style="text-align: center; color: #777;">Sem horários ou registos recentes.</td>
+                        <td colspan="4" style="text-align: center; color: var(--text-muted, #777);">Sem horários ou registos recentes.</td>
                     </tr>
                 <% } %>
             </tbody>
@@ -141,7 +193,7 @@
                     </div>
                 <% }) %>
             <% } else { %>
-                <p style="font-size: 13px; color: #777;">Sem picagens registadas.</p>
+                <p style="font-size: 13px; color: var(--text-muted, #777);">Sem picagens registadas.</p>
             <% } %>
         </div>
     </div>
@@ -159,7 +211,6 @@
             const novaHora = prompt("Nova hora (HH:MM):", horaAtual);
             if (!novaHora) return;
 
-            // Criar formulário dinâmico para enviar o pedido POST de edição
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = '/portal/editar-picagem';

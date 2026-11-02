@@ -1,30 +1,54 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
+    <script>
+        // Aplicar o tema guardado ANTES da página renderizar para evitar flash branco
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+    </script>
+    <link rel="stylesheet" href="/style.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestão de Horários (Admin)</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f9; margin: 0; padding: 15px; color: #333; }
-        .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); margin-bottom: 15px; }
-        h2, h3 { color: #333; margin-top: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color, #f4f6f9); margin: 0; padding: 15px; color: var(--text-color, #333); transition: background 0.3s, color 0.3s; }
+        .card { background: var(--card-bg, white); padding: 15px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); margin-bottom: 15px; transition: background 0.3s; }
+        h2, h3 { color: var(--text-color, #333); margin-top: 0; }
         a { color: #007bff; text-decoration: none; font-weight: bold; }
-        textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-family: monospace; font-size: 12px; box-sizing: border-box; }
+        textarea { width: 100%; padding: 10px; border: 1px solid var(--border-color, #ccc); background: var(--card-bg, white); color: var(--text-color, #333); border-radius: 6px; font-family: monospace; font-size: 12px; box-sizing: border-box; }
         button { padding: 10px 15px; background: #007bff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; }
         .btn-danger { background: #dc3545; }
         .btn-warning { background: #ffc107; color: #333; }
         .sucesso { background: #d4edda; color: #155724; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 13px; }
         .erro { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 13px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
-        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background: #fafafa; }
-        input[type="text"], input[type="number"], select { padding: 5px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; color: var(--text-color, #333); }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border-color, #eee); }
+        th { background: var(--table-header, #fafafa); color: var(--text-color, #555); }
+        input[type="text"], input[type="number"], select { padding: 5px; border: 1px solid var(--border-color, #ccc); background: var(--card-bg, white); color: var(--text-color, #333); border-radius: 4px; font-size: 12px; }
         .table-container { overflow-x: auto; }
+        .admin-link { display: inline-block; background: #17a2b8; color: white; padding: 10px 15px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 14px; margin-bottom: 15px; }
+
+        .top-bar { display: flex; justify-content: space-between; align-items: center; }
+        #theme-toggle {
+            background: var(--border-color, #ddd);
+            border: none;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>Gestão de Horários</h2>
+        <div class="top-bar">
+            <h2>Gestão de Horários</h2>
+            <button id="theme-toggle" onclick="toggleGlobalTheme()" title="Alternar Modo Noturno">🌙</button>
+        </div>
         <p><a href="/portal">← Voltar ao Portal</a></p>
         
         <% if (mensagem) { %><div class="sucesso"><%= mensagem %></div><% } %>
@@ -32,7 +56,7 @@
     </div>
 
     <div class="card">
-        <h3>1. Prompt para a LLM</h3>
+        <h3>Prompt para a LLM</h3>
         <textarea rows="6" readonly>Atua como um sistema de OCR e extração de dados de alta precisão para escalas de trabalho.
 
 OBJETIVO CRÍTICO:
@@ -40,18 +64,18 @@ Analisar a imagem da escala de horários em anexo e extrair TODOS os turnos de t
 
 ESTRATÉGIA DE LEITURA OBRIGATÓRIA (PASSO A PASSO):
 1. Mapeamento Temporal:
-   - Lê a linha de datas no topo da tabela e associa cada dia da semana ao respetivo YYYY-MM-DD.
+- Lê a linha de datas no topo da tabela e associa cada dia da semana ao respetivo YYYY-MM-DD.
 
 2. Inspeção de Célula a Célula (Regra Anti-Omissão):
-   - Cada célula diária pode conter 1 turno, 2 turnos (turno duplo/repartido) ou 0 turnos.
-   - Analisa a célula na vertical: se existirem dois blocos de horas empilhados (ex: linha superior "11:45 15:45" e linha inferior "19:00 22:00"), DEVES gerar DOIS objetos JSON independentes para a mesma pessoa e mesma data.
-   - NUNCA fusiones nem omitas o segundo turno de um dia.
+- Cada célula diária pode conter 1 turno, 2 turnos (turno duplo/repartido) ou 0 turnos.
+- Analisa a célula na vertical: se existirem dois blocos de horas empilhados (ex: linha superior "11:45 15:45" e linha inferior "19:00 22:00"), DEVES gerar DOIS objetos JSON independentes para a mesma pessoa e mesma data.
+- NUNCA fusiones nem omitas o segundo turno de um dia.
 
 3. Extração da Refeição:
-   - Lê unicamente o valor marcado na sub-coluna/marcador visual "REF." daquele turno. NÃO apliques lógica de cálculo de duração de turno.
+- Lê unicamente o valor marcado na sub-coluna/marcador visual "REF." daquele turno. NÃO apliques lógica de cálculo de duração de turno.
 
 4. Validação Interna Antes da Resposta:
-   - Conta o número total de blocos de horário desenhados na linha do funcionário. O número de objetos JSON gerados para esse funcionário tem de corresponder EXATAMENTE ao número total de blocos visíveis.
+- Conta o número total de blocos de horário desenhados na linha do funcionário. O número de objetos JSON gerados para esse funcionário tem de corresponder EXATAMENTE ao número total de blocos visíveis.
 
 FORMATO DE SAÍDA:
 Gera estritamente o array JSON abaixo, sem texto antes ou depois:
@@ -67,7 +91,7 @@ Gera estritamente o array JSON abaixo, sem texto antes ou depois:
     "pausa_minutos": 0
   }
 ]
-]</textarea>
+</textarea>
     </div>
 
     <div class="card">
@@ -78,7 +102,9 @@ Gera estritamente o array JSON abaixo, sem texto antes ou depois:
             <button type="submit">Sincronizar Escala</button>
         </form>
     </div>
-<a href="/admin/logs" class="admin-link" style="background: #17a2b8; color: white; margin-left: 10px;">📜 Ver Logs de Auditoria</a>
+
+    <a href="/admin/logs" class="admin-link">📜 Ver Logs de Auditoria</a>
+
     <div class="card">
         <h3>3. Horários Ativos</h3>
         <% if (horarios && horarios.length > 0) { %>
@@ -102,8 +128,8 @@ Gera estritamente o array JSON abaixo, sem texto antes ou depois:
                 <tbody>
                     <% if (horarios && horarios.length > 0) { %>
                         <% horarios.forEach(h => { %>
-                            <form action="/admin/horario/editar/<%= h.id %>" method="POST">
-                                <tr>
+                            <tr>
+                                <form action="/admin/horario/editar/<%= h.id %>" method="POST">
                                     <td><%= h.username %></td>
                                     <td><input type="text" name="data" value="<%= h.data %>" size="9" required></td>
                                     <td><input type="text" name="entrada_prevista" value="<%= h.entrada_prevista %>" size="4" required></td>
@@ -116,21 +142,44 @@ Gera estritamente o array JSON abaixo, sem texto antes ou depois:
                                     </td>
                                     <td>
                                         <button type="submit" class="btn-warning" style="padding: 5px 8px; font-size: 11px;">Salvar</button>
-                            </form>
+                                </form>
                                         <form action="/admin/horario/apagar/<%= h.id %>" method="POST" style="display:inline; margin-left: 2px;">
                                             <button type="submit" class="btn-danger" style="padding: 5px 8px; font-size: 11px;" onclick="return confirm('Apagar este turno?');">X</button>
                                         </form>
                                     </td>
-                                </tr>
+                            </tr>
                         <% }) %>
                     <% } else { %>
                         <tr>
-                            <td colspan="6" style="text-align: center; color: #777;">Sem horários registados.</td>
+                            <td colspan="6" style="text-align: center; color: var(--text-muted, #777);">Sem horários registados.</td>
                         </tr>
                     <% } %>
                 </tbody>
             </table>
         </div>
     </div>
+
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('theme-toggle');
+            if (btn) {
+                const current = document.documentElement.getAttribute('data-theme');
+                btn.textContent = current === 'dark' ? '☀️' : '🌙';
+            }
+        });
+
+        function toggleGlobalTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+
+            const btn = document.getElementById('theme-toggle');
+            if (btn) {
+                btn.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+            }
+        }
+    </script>
 </body>
 </html>

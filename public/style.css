@@ -1,0 +1,54 @@
+:root {
+    --bg-color: #f4f6f9;
+    --card-bg: #ffffff;
+    --text-color: #333333;
+    --text-muted: #666666;
+    --border-color: #eee;
+    --table-header: #fafafa;
+}
+
+[data-theme="dark"] {
+    --bg-color: #121212;
+    --card-bg: #1e1e1e;
+    --text-color: #e0e0e0;
+    --text-muted: #aaaaaa;
+    --border-color: #2c2c2c;
+    --table-header: #252525;
+}
+
+body { 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+    background: var(--bg-color); 
+    margin: 0; 
+    padding: 15px; 
+    color: var(--text-color); 
+    transition: background 0.3s, color 0.3s;
+}
+
+.header, .ponto-box, .section, .container { 
+    background: var(--card-bg); 
+    color: var(--text-color);
+    padding: 15px; 
+    border-radius: 10px; 
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05); 
+    margin-bottom: 15px; 
+    transition: background 0.3s;
+}
+
+h2, h3, h4 { color: var(--text-color); }
+p { color: var(--text-muted); }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--text-color); }
+th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border-color); }
+th { background: var(--table-header); color: var(--text-color); }
+
+.form-control { 
+    width: 100%; 
+    padding: 8px; 
+    border: 1px solid var(--border-color); 
+    background: var(--card-bg);
+    color: var(--text-color);
+    border-radius: 6px; 
+    box-sizing: border-box; 
+    font-size: 13px; 
+}
