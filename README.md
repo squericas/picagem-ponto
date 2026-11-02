@@ -1,102 +1,79 @@
-# ⏱️ Picagem Ponto
+# Sistema de Registo de Ponto (Paralelo)
 
-Sistema web descentralizado e leve para gestão de horários, importação de escalas, registo de picagens em tempo real, edição autónoma de registos com auditoria e cálculo de saldos/desvios de tempo para estabelecimentos comerciais. Desenvolvido com Node.js, Express e SQLite, otimizado para deploy em servidores cloud (VPS Linux / Oracle Cloud).
-
----
-
-## 🚀 Funcionalidades Principais
-
-* **Autenticação Inteligente com PIN:** Criação automática de contas no primeiro acesso com PIN inicial (`0000`) e fluxo obrigatório de alteração segura de PIN.
-* **Painel de Administração Exclusivo:** Gestão centralizada e importação exaustiva de escalas/turnos através de dados em formato JSON (suportando turnos repartidos e horários que cruzam a meia-noite).
-* **Registo de Ponto em Tempo Real:** Validações instantâneas para entradas e saídas (bloqueio de picagens fora da janela permitida, prevenção de duplicações e cálculo imediato de atrasos ou horas extra).
-* **Edição Autónoma & Apagar Picagens:** Os trabalhadores podem corrigir a hora de uma picagem ou apagar registos errados diretamente no portal pessoal.
-* **Logs de Auditoria de Alterações:** Todas as edições, adições manuais e remoções de picagens ficam gravadas num registo inalterável de logs consultável pelo administrador em `/admin/logs`.
-* **Portal do Funcionário:** Visualização do histórico de picagens reais, horários previstos e cálculo automático do saldo de horas de cada turno.
-* **Exportação de Relatórios (Ciclo 26 a 26):** Exportação de relatórios individuais de horas trabalhadas em formato CSV (compatível com Excel/Google Sheets) abrangendo o ciclo mensal de 26 a 26.
+Sistema web de ponto e gestão de horários desenvolvido em **Node.js**, **Express**, **SQLite** e **EJS**, com suporte a ciclos de apuramento (26 a 26), logs de auditoria e modo noturno global.
 
 ---
 
 ## 🛠️ Tecnologias Utilizadas
-
-* **Backend:** Node.js, Express, Express-Session
-* **Base de Dados:** SQLite (`sqlite3`) com caminhos absolutos
-* **Template Engine:** EJS (Embedded JavaScript Templates)
-* **Gestor de Processos:** PM2
-* **Infraestrutura / Acesso:** Cloudflare Tunnel / Reverse Proxy
-
----
-
-## 📁 Estrutura do Projeto
-
-```text
-picagem-ponto/
-├── views/                # Ficheiros de visualização EJS (portal, login, importar, logs)
-│   ├── portal.ejs
-│   ├── login.ejs
-│   ├── alterar_pin.ejs
-│   ├── importar.ejs
-│   └── logs.ejs
-├── database.js           # Configuração da base de dados e schemas SQLite
-├── server.js             # Lógica do servidor, rotas e regras de negócio
-├── package.json          # Dependências do projeto
-└── ponto.db              # Base de dados SQLite (gerada automaticamente)
-```
+* **Backend:** Node.js, Express
+* **Base de Dados:** SQLite (`sqlite3`)
+* **Sessões e Segurança:** `express-session`, `bcrypt` (para encriptação de palavras-passe)
+* **Frontend:** EJS (Embedded JavaScript Templates), CSS com suporte a variáveis dinâmicas para Dark/Light Mode
+* **Process Manager:** PM2
 
 ---
 
-## ⚙️ Guia de Instalação e Execução na VPS
+## 👥 Contas e Níveis de Acesso
 
-Siga os passos abaixo para configurar e colocar o projeto a funcionar num servidor Linux (Ubuntu/Debian VPS):
-
-### 1. Atualizar o sistema e instalar dependências essenciais
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y git curl sqlite3
-```
-
-### 2. Instalar o Node.js (Versão LTS)
-```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-```
-
-### 3. Clonar o Repositório e Instalar Pacotes
-```bash
-git clone https://github.com/squericas/picagem-ponto.git
-cd picagem-ponto
-npm install
-```
-
-### 4. Instalar e Configurar o Gestor de Processos (PM2)
-```bash
-sudo npm install -g pm2
-pm2 start server.js --name "ponto-app"
-pm2 save
-pm2 startup
-```
-*(Execute o comando emitido pelo `pm2 startup` para garantir que o serviço é iniciado automaticamente após um reboot da máquina).*
-
-### 5. Verificar o Estado do Servidor
-```bash
-pm2 status
-pm2 logs ponto-app --lines 20
-```
-
-A aplicação ficará a correr por predefinição na porta `3009`, pronta a ser ligada ao teu Cloudflare Tunnel ou Nginx.
+* **Administrador (`gestor_app`):** Conta com privilégios exclusivos para gestão de horários, importação de escalas via JSON/LLM e consulta de logs de auditoria de alterações.
+* **Funcionários (ex: `r.pereira`):** Contas individuais para registo de ponto (entrada/saída), consulta de resumos de desvios, pedidos de acerto de picagens e exportação individual de relatórios.
 
 ---
 
-## 🔐 Controlo de Acessos e Administração
+## 🔑 Criar a Conta Administradora (`gestor_app`)
 
-* **Administrador Principal (`r.pereira`):**
-  * Acesso exclusivo ao Painel de Importação de Escalas (`/admin/importar`).
-  * Acesso à Tabela Global de Logs de Auditoria (`/admin/logs`).
-  * Capacidade de exportar relatórios de qualquer colaborador.
-* **Funcionários:**
-  * Acesso restrito ao Portal Pessoal (`/portal`) para registo de ponto, correção de picagens próprias e descarregamento do seu relatório individual de 26 a 26.
+As senhas do sistema são guardadas de forma segura com encriptação `bcrypt`. Para criar ou redefinir a conta administrativa `gestor_app` diretamente na base de dados, executa o comando abaixo no terminal da VPS (na pasta raiz do projeto):
+
+```bash
+node -e "
+const bcrypt = require('bcrypt');
+const sqlite3 = require('sqlite3').verbose();
+const db = new sqlite3.Database('./ponto.db');
+
+bcrypt.hash('TUA_SENHA_SEGURA', 10, (err, hash) => {
+    db.run(\"INSERT OR REPLACE INTO funcionarios (username, nome_completo, pin, primeiro_acesso) VALUES ('gestor_app', 'Gestor da Aplicação', ?, 0)\", [hash], () => {
+        console.log('Conta gestor_app criada/atualizada com sucesso!');
+        db.close();
+    });
+});
+"
+```
+
+*(Substitui `'TUA_SENHA_SEGURA'` pela palavra-passe que pretendes atribuir ao gestor).*
 
 ---
 
-## 📄 Licença
+## 🔒 Segurança e Encriptação Retroativa
 
-Este projeto é de uso privado e interno.
+* Novas contas criadas (manualmente ou via importação de escala) têm o PIN padrão `'0000'` encriptado com `bcrypt`.
+* A aplicação possui **migração automática de senhas em texto plano**: se um utilizador antigo com a palavra-passe não encriptada fizer login, a aplicação valida a credencial e converte-a de imediato num hash `bcrypt` na base de dados.
+
+---
+
+## 🚀 Instalação e Execução na VPS
+
+1. **Atualizar o código no servidor:**
+   ```bash
+   git pull origin main
+   ```
+
+2. **Instalar dependências:**
+   ```bash
+   npm install
+   ```
+
+3. **Iniciar/Reiniciar a aplicação no PM2:**
+   ```bash
+   pm2 delete ponto-app
+   pm2 start server.js --name ponto-app
+   pm2 save
+   ```
+
+---
+
+## 📄 Funcionalidades Principais
+
+1. **Modo Noturno Global:** Suporte a alternância clara/escura persistida no navegador via `localStorage`.
+2. **Importação Inteligente de Escalas:** Leitura e inserção em lote via JSON de escalas enviadas pelo LLM.
+3. **Auditoria (`logs_alteracoes`):** Registos detalhados de adições, edições e remoções de picagens efetuadas pelos utilizadores.
+4. **Ciclo de Relatório (26 a 26):** Exportação de relatórios em ficheiro CSV calculando saldos de horas entre os dias 26 de meses consecutivos.

@@ -1,5 +1,6 @@
 const express = require('express');
 const session = require('express-session');
+const bcrypt = require('bcrypt');
 const db = require('./database');
 
 const app = express();
@@ -11,8 +12,10 @@ app.use(session({
     resave: false,
     saveUninitialized: false
 }));
-// Servir ficheiros estáticos
+
+// Servir ficheiros estáticos (CSS, etc.)
 app.use(express.static('public'));
+
 // Redirecionar raiz para o login
 app.get('/', (req, res) => res.redirect('/login'));
 
@@ -23,10 +26,10 @@ function autenticar(req, res, next) {
     next();
 }
 
-// Middleware para restringir a importação estritamente ao r.pereira
+// Middleware para restringir a importação estritamente à conta gestor_app
 function apenasAdmin(req, res, next) {
-    if (!req.session.user || req.session.user.username !== 'r.pereira') {
-        return res.status(403).send("Acesso Negado. Apenas o utilizador r.pereira pode aceder a esta área.");
+    if (!req.session.user || req.session.user.username !== 'gestor_app') {
+        return res.status(403).send("Acesso Negado. Apenas a conta gestor_app pode aceder a esta área.");
     }
     next();
 }
@@ -43,37 +46,61 @@ function calcularMinutosEntre(horaIni, horaFim, cruzaMeiaNoite = false) {
     return min2 - min1;
 }
 
-// --- AUTENTICAÇÃO INTELIGENTE (Criação automática se PIN for 0000) ---
+// --- AUTENTICAÇÃO INTELIGENTE (Criação automática se PIN for 0000 com Hash) ---
 app.get('/login', (req, res) => res.render('login', { erro: null }));
 
 app.post('/login', (req, res) => {
     const { username, pin } = req.body;
     const cleanUsername = username.trim().toLowerCase();
 
-    db.get('SELECT * FROM funcionarios WHERE username = ?', [cleanUsername], (err, user) => {
+    db.get('SELECT * FROM funcionarios WHERE username = ?', [cleanUsername], async (err, user) => {
         if (!user) {
             if (pin === '0000') {
                 const partes = cleanUsername.split('.');
                 const nomeFormatado = partes.length > 1 ? `${partes[0].toUpperCase()}. ${partes[1].charAt(0).toUpperCase() + partes[1].slice(1)}` : cleanUsername;
 
-                db.run('INSERT INTO funcionarios (username, nome_completo, pin, primeiro_acesso) VALUES (?, ?, ?, 1)', 
-                    [cleanUsername, nomeFormatado, '0000'], function(err) {
-                        if (err) return res.render('login', { erro: 'Erro ao criar conta automática.' });
-                        
-                        db.get('SELECT * FROM funcionarios WHERE id = ?', [this.lastID], (err, novoUser) => {
-                            req.session.user = novoUser;
-                            return res.redirect('/alterar-pin');
+                try {
+                    const hashedPin = await bcrypt.hash('0000', 10);
+                    db.run('INSERT INTO funcionarios (username, nome_completo, pin, primeiro_acesso) VALUES (?, ?, ?, 1)', 
+                        [cleanUsername, nomeFormatado, hashedPin], function(err) {
+                            if (err) return res.render('login', { erro: 'Erro ao criar conta automática.' });
+                            
+                            db.get('SELECT * FROM funcionarios WHERE id = ?', [this.lastID], (err, novoUser) => {
+                                req.session.user = novoUser;
+                                return res.redirect('/alterar-pin');
+                            });
                         });
-                    });
+                } catch (e) {
+                    return res.render('login', { erro: 'Erro interno ao processar a segurança.' });
+                }
             } else {
                 return res.render('login', { erro: 'Utilizador não encontrado. Use o PIN 0000 no primeiro acesso.' });
             }
         } else {
-            if (user.pin !== pin) {
+            let senhaValida = false;
+
+            // Se o pin na BD já estiver encriptado (começa por $2), comparamos com bcrypt
+            if (user.pin && user.pin.startsWith('$2')) {
+                senhaValida = await bcrypt.compare(pin, user.pin);
+            } else {
+                // Legado: se estiver em texto plano, validamos e encriptamos de imediato na BD
+                if (user.pin === pin) {
+                    senhaValida = true;
+                    try {
+                        const novoHash = await bcrypt.hash(pin, 10);
+                        db.run('UPDATE funcionarios SET pin = ? WHERE id = ?', [novoHash, user.id]);
+                    } catch (e) {
+                        console.error('Erro ao atualizar hash legado:', e);
+                    }
+                }
+            }
+
+            if (!senhaValida) {
                 return res.render('login', { erro: 'PIN incorreto.' });
             }
+
             req.session.user = user;
-            if (user.primeiro_acesso === 1 || user.pin === '0000') {
+            if (user.primeiro_acesso === 1 || pin === '0000') {
                 return res.redirect('/alterar-pin');
             }
             res.redirect('/portal');
@@ -86,20 +113,26 @@ app.get('/alterar-pin', (req, res) => {
     res.render('alterar_pin', { erro: null });
 });
 
-app.post('/alterar-pin', (req, res) => {
+app.post('/alterar-pin', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     const { novo_pin } = req.body;
     if (!novo_pin || novo_pin.length < 4) {
         return res.render('alterar_pin', { erro: 'O PIN deve ter pelo menos 4 dígitos.' });
     }
-    db.run('UPDATE funcionarios SET pin = ?, primeiro_acesso = 0 WHERE id = ?', [novo_pin, req.session.user.id], () => {
-        req.session.user.primeiro_acesso = 0;
-        req.session.user.pin = novo_pin;
-        res.redirect('/portal');
-    });
+
+    try {
+        const hashedPin = await bcrypt.hash(novo_pin, 10);
+        db.run('UPDATE funcionarios SET pin = ?, primeiro_acesso = 0 WHERE id = ?', [hashedPin, req.session.user.id], () => {
+            req.session.user.primeiro_acesso = 0;
+            req.session.user.pin = hashedPin;
+            res.redirect('/portal');
+        });
+    } catch (e) {
+        res.render('alterar_pin', { erro: 'Erro ao encriptar o novo PIN.' });
+    }
 });
 
-// --- ÁREA DE GESTÃO / IMPORTAÇÃO (Exclusivo r.pereira) ---
+// --- ÁREA DE GESTÃO / IMPORTAÇÃO (Exclusivo gestor_app) ---
 app.get('/admin/importar', apenasAdmin, (req, res) => {
     db.all(`
         SELECT h.*, f.nome_completo, f.username 
@@ -116,7 +149,9 @@ app.post('/admin/importar', apenasAdmin, (req, res) => {
         const dados = JSON.parse(req.body.json_horario);
         const lista = Array.isArray(dados) ? dados : [dados];
 
-        db.serialize(() => {
+        db.serialize(async () => {
+            const defaultPinHash = await bcrypt.hash('0000', 10);
+
             lista.forEach(item => {
                 const uName = item.username.trim().toLowerCase();
                 const nomeCompleto = item.nome_completo || uName;
@@ -126,8 +161,8 @@ app.post('/admin/importar', apenasAdmin, (req, res) => {
 
                 db.get(`SELECT id FROM funcionarios WHERE username = ?`, [uName], (err, func) => {
                     if (!func) {
-                        db.run(`INSERT INTO funcionarios (username, nome_completo, pin, primeiro_acesso) VALUES (?, ?, '0000', 1)`, 
-                            [uName, nomeCompleto], function(err) {
+                        db.run(`INSERT INTO funcionarios (username, nome_completo, pin, primeiro_acesso) VALUES (?, ?, ?, 1)`, 
+                            [uName, nomeCompleto, defaultPinHash], function(err) {
                                 if (!err) {
                                     inserirOuAtualizarTurno(this.lastID, item, temRefeicao, entradaPrev, saidaPrev);
                                 }
@@ -420,7 +455,7 @@ app.post('/picar', autenticar, (req, res) => {
 
 // --- EXPORTAÇÃO DE HORAS INDIVIDUAL (Ciclo 26 a 26) ---
 app.get('/exportar-horas', autenticar, (req, res) => {
-    const isAdm = req.session.user.username === 'r.pereira';
+    const isAdm = req.session.user.username === 'gestor_app';
     const funcionarioId = (isAdm && req.query.funcionario_id) ? req.query.funcionario_id : req.session.user.id;
 
     const hoje = new Date();

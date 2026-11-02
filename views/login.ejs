@@ -101,10 +101,10 @@
         <h2>Registo de Ponto</h2>
         <% if (erro) { %><div class="erro"><%= erro %></div><% } %>
         <form action="/login" method="POST">
-            <label>Utilizador (ex: r.pereira)</label>
+            <label>Utilizador (ex: r.pereira / c.batista )</label>
             <input type="text" name="username" autocapitalize="none" required>
             
-            <label>PIN</label>
+            <label>PIN (0000 se for a primeira vez)</label>
             <input type="password" name="pin" required maxlength="6">
             
             <button type="submit">Entrar</button>
