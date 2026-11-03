@@ -63,14 +63,18 @@
     </style>
 </head>
 <body>
-    <div class="header">
+<div class="header">
         <div>
             <h2><%= user.nome_completo %></h2>
             <p>@<%= user.username %></p>
         </div>
-        <div style="display: flex; align-items: center; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
             <!-- Botão de Alternância de Tema -->
             <button id="theme-toggle" onclick="toggleGlobalTheme()" title="Alternar Modo Noturno">🌙</button>
+            
+            <!-- Botão de Alterar Password -->
+            <button onclick="abrirModalPassword()" class="btn-acao" style="background: #17a2b8; color: white; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; border: none; font-size: 13px;" title="Alterar Password">🔑 Mudar Pass</button>
+            
             <a href="/logout" class="logout">Sair</a>
         </div>
     </div>
@@ -233,6 +237,40 @@
             form.appendChild(inputId);
             form.appendChild(inputTipo);
             form.appendChild(inputHora);
+            document.body.appendChild(form);
+            form.submit();
+        }
+    </script>
+    <script>
+        function abrirModalPassword() {
+            const passAtual = prompt("Introduz a tua password atual:");
+            if (!passAtual) return;
+
+            const novaPass = prompt("Introduz a nova password (mínimo 4 caracteres):");
+            if (!novaPass) return;
+
+            if (novaPass.length < 4) {
+                alert("A nova password tem de ter pelo menos 4 caracteres.");
+                return;
+            }
+
+            // Criar formulário dinâmico para submeter de forma segura via POST
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/portal/alterar-password';
+
+            const inputAtual = document.createElement('input');
+            inputAtual.type = 'hidden';
+            inputAtual.name = 'password_atual';
+            inputAtual.value = passAtual;
+
+            const inputNova = document.createElement('input');
+            inputNova.type = 'hidden';
+            inputNova.name = 'nova_password';
+            inputNova.value = novaPass;
+
+            form.appendChild(inputAtual);
+            form.appendChild(inputNova);
             document.body.appendChild(form);
             form.submit();
         }

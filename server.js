@@ -131,7 +131,47 @@ app.post('/alterar-pin', async (req, res) => {
         res.render('alterar_pin', { erro: 'Erro ao encriptar o novo PIN.' });
     }
 });
+// --- ALTERAR PASSWORD / PIN A PARTIR DO PORTAL ---
+app.post('/portal/alterar-password', autenticar, async (req, res) => {
+    const userId = req.session.user.id;
+    const { password_atual, nova_password } = req.body;
 
+    if (!nova_password || nova_password.length < 4) {
+        return res.send(`<script>alert('Erro: A nova password deve ter pelo menos 4 caracteres.'); window.location.href='/portal';</script>`);
+    }
+
+    db.get('SELECT * FROM funcionarios WHERE id = ?', [userId], async (err, user) => {
+        if (!user) {
+            return res.send(`<script>alert('Utilizador não encontrado.'); window.location.href='/login';</script>`);
+        }
+
+        let senhaValida = false;
+        if (user.pin && user.pin.startsWith('$2')) {
+            senhaValida = await bcrypt.compare(password_atual, user.pin);
+        } else {
+            senhaValida = (user.pin === password_atual);
+        }
+
+        if (!senhaValida) {
+            return res.send(`<script>alert('Erro: A password atual está incorreta.'); window.location.href='/portal';</script>`);
+        }
+
+        const hashedPin = await bcrypt.hash(nova_password, 10);
+
+        db.run('UPDATE funcionarios SET pin = ? WHERE id = ?', [hashedPin, userId], (err) => {
+            if (err) {
+                return res.send(`<script>alert('Erro ao atualizar a password.'); window.location.href='/portal';</script>`);
+            }
+
+            // Registar nos logs de auditoria
+            const detalhesLog = `Utilizador ${req.session.user.username} alterou a sua password com sucesso.`;
+            db.run('INSERT INTO logs_alteracoes (funcionario_id, admin_ou_user, acao, detalhes) VALUES (?, ?, ?, ?)',
+                [userId, req.session.user.username, 'ALTEROU_PASSWORD', detalhesLog]);
+
+            res.send(`<script>alert('Password alterada com sucesso!'); window.location.href='/portal';</script>`);
+        });
+    });
+});
 // --- ÁREA DE GESTÃO / IMPORTAÇÃO (Exclusivo gestor_app) ---
 app.get('/admin/importar', apenasAdmin, (req, res) => {
     db.all(`
