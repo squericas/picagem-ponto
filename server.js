@@ -184,58 +184,77 @@ app.get('/admin/importar', apenasAdmin, (req, res) => {
     });
 });
 
-app.post('/admin/importar', apenasAdmin, (req, res) => {
+app.post('/admin/importar', apenasAdmin, async (req, res) => {
     try {
         const dados = JSON.parse(req.body.json_horario);
         const lista = Array.isArray(dados) ? dados : [dados];
 
-        db.serialize(async () => {
-            const defaultPinHash = await bcrypt.hash('0000', 10);
+        const estatisticas = {}; // Registo por username: { importados: 0, ignorados: 0 }
+        const defaultPinHash = await bcrypt.hash('0000', 10);
 
-            lista.forEach(item => {
+        const processarItem = (item) => {
+            return new Promise((resolve) => {
                 const uName = item.username.trim().toLowerCase();
                 const nomeCompleto = item.nome_completo || uName;
                 const temRefeicao = item.refeicao ? 1 : 0;
                 const entradaPrev = item.entrada_prevista;
                 const saidaPrev = item.saida_prevista;
 
+                if (!estatisticas[uName]) {
+                    estatisticas[uName] = { importados: 0, ignorados: 0 };
+                }
+
                 db.get(`SELECT id FROM funcionarios WHERE username = ?`, [uName], (err, func) => {
                     if (!func) {
                         db.run(`INSERT INTO funcionarios (username, nome_completo, pin, primeiro_acesso) VALUES (?, ?, ?, 1)`, 
                             [uName, nomeCompleto, defaultPinHash], function(err) {
-                                if (!err) {
-                                    inserirOuAtualizarTurno(this.lastID, item, temRefeicao, entradaPrev, saidaPrev);
+                                if (err) {
+                                    resolve();
+                                    return;
                                 }
+                                verificarEInserirTurno(this.lastID, uName, item, temRefeicao, entradaPrev, saidaPrev, resolve);
                             });
                     } else {
-                        inserirOuAtualizarTurno(func.id, item, temRefeicao, entradaPrev, saidaPrev);
+                        verificarEInserirTurno(func.id, uName, item, temRefeicao, entradaPrev, saidaPrev, resolve);
                     }
                 });
             });
+        };
 
-            function inserirOuAtualizarTurno(funcId, item, temRefeicao, entradaPrev, saidaPrev) {
-                db.get(`SELECT id FROM horarios_previstos WHERE funcionario_id = ? AND data = ? AND entrada_prevista = ?`, 
-                    [funcId, item.data, entradaPrev], (err, existente) => {
-                    if (existente) {
-                        db.run(`UPDATE horarios_previstos SET saida_prevista = ?, refeicao = ?, pausa_minutos = ? WHERE id = ?`, 
-                            [saidaPrev, temRefeicao, item.pausa_minutos || 0, existente.id]);
-                    } else {
-                        db.run(`INSERT INTO horarios_previstos (funcionario_id, data, entrada_prevista, saida_prevista, refeicao, pausa_minutos) VALUES (?, ?, ?, ?, ?, ?)`, 
-                            [funcId, item.data, entradaPrev, saidaPrev, temRefeicao, item.pausa_minutos || 0]);
-                    }
-                });
-            }
+        const verificarEInserirTurno = (funcId, uName, item, temRefeicao, entradaPrev, saidaPrev, resolve) => {
+            db.get(`SELECT id FROM horarios_previstos WHERE funcionario_id = ? AND data = ? AND entrada_prevista = ?`, 
+                [funcId, item.data, entradaPrev], (err, existente) => {
+                if (existente) {
+                    estatisticas[uName].ignorados++;
+                    resolve();
+                } else {
+                    db.run(`INSERT INTO horarios_previstos (funcionario_id, data, entrada_prevista, saida_prevista, refeicao, pausa_minutos) VALUES (?, ?, ?, ?, ?, ?)`, 
+                        [funcId, item.data, entradaPrev, saidaPrev, temRefeicao, item.pausa_minutos || 0], (err) => {
+                        if (!err) {
+                            estatisticas[uName].importados++;
+                        }
+                        resolve();
+                    });
+                }
+            });
+        };
 
-            setTimeout(() => {
-                db.all(`
-                    SELECT h.*, f.nome_completo, f.username 
-                    FROM horarios_previstos h 
-                    JOIN funcionarios f ON h.funcionario_id = f.id 
-                    ORDER BY h.data DESC, h.entrada_prevista DESC
-                `, [], (err, horarios) => {
-                    res.render('importar', { mensagem: `Escala exaustiva importada com sucesso!`, erro: null, horarios: horarios || [] });
-                });
-            }, 200);
+        // Aguardar o término do processamento de todos os itens do JSON
+        await Promise.all(lista.map(item => processarItem(item)));
+
+        // Construir a mensagem detalhada com o resumo por funcionário
+        let resumoMsg = "<strong>Escala processada com sucesso! Resumo:</strong><br>";
+        for (const [username, stats] of Object.entries(estatisticas)) {
+            resumoMsg += `• <strong>@${username}</strong> — 🟢 ${stats.importados} importados | 🟡 ${stats.ignorados} ignorados (duplicados)<br>`;
+        }
+
+        db.all(`
+            SELECT h.*, f.nome_completo, f.username 
+            FROM horarios_previstos h 
+            JOIN funcionarios f ON h.funcionario_id = f.id 
+            ORDER BY h.data DESC, h.entrada_prevista DESC
+        `, [], (err, horarios) => {
+            res.render('importar', { mensagem: resumoMsg, erro: null, horarios: horarios || [] });
         });
 
     } catch (e) {
