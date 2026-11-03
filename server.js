@@ -289,7 +289,27 @@ app.post('/admin/horario/editar/:id', apenasAdmin, (req, res) => {
         () => res.redirect('/admin/importar')
     );
 });
+// --- APAGAR MÚLTIPLOS HORÁRIOS SELECIONADOS ---
+app.post('/admin/horarios/apagar-selecionados', apenasAdmin, (req, res) => {
+    let { ids_apagar } = req.body;
 
+    if (!ids_apagar) {
+        return res.redirect('/admin/importar');
+    }
+
+    // Se for selecionado apenas um item, o req.body.ids_apagar vem como string; se forem vários, vem como array.
+    const ids = Array.isArray(ids_apagar) ? ids_apagar : [ids_apagar];
+
+    if (ids.length === 0) {
+        return res.redirect('/admin/importar');
+    }
+
+    // Criar a query dinâmica com placeholders (?, ?, ...)
+    const placeholders = ids.map(() => '?').join(',');
+    db.run(`DELETE FROM horarios_previstos WHERE id IN (${placeholders})`, ids, (err) => {
+        res.redirect('/admin/importar');
+    });
+});
 app.get('/admin/logs', apenasAdmin, (req, res) => {
     db.all(`
         SELECT l.*, f.nome_completo, f.username 

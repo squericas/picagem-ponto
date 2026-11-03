@@ -105,18 +105,29 @@ Gera estritamente o array JSON abaixo, sem texto antes ou depois:
 
     <a href="/admin/logs" class="admin-link">📜 Ver Logs de Auditoria</a>
 
-    <div class="card">
+<div class="card">
         <h3>3. Horários Ativos</h3>
-        <% if (horarios && horarios.length > 0) { %>
-            <form action="/admin/horarios/apagar-todos" method="POST" style="margin-bottom: 10px;">
-                <button type="submit" class="btn-danger" onclick="return confirm('Queres mesmo apagar TUDO?');">Apagar Todos</button>
-            </form>
-        <% } %>
+        
+        <!-- Formulário para apagar selecionados e botão apagar tudo -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <% if (horarios && horarios.length > 0) { %>
+                <form id="form-apagar-multiplos" action="/admin/horarios/apagar-selecionados" method="POST" style="margin: 0;">
+                    <button type="submit" class="btn-danger" onclick="return confirm('Queres mesmo apagar os horários selecionados?');">Apagar Selecionados</button>
+                </form>
+
+                <form action="/admin/horarios/apagar-todos" method="POST" style="margin: 0;">
+                    <button type="submit" class="btn-danger" onclick="return confirm('Queres mesmo apagar TUDO?');">Apagar Todos</button>
+                </form>
+            <% } %>
+        </div>
 
         <div class="table-container">
             <table>
                 <thead>
                     <tr>
+                        <th style="width: 30px; text-align: center;">
+                            <input type="checkbox" id="select-all" onclick="toggleSelectAll(this)" title="Selecionar Todos">
+                        </th>
                         <th>Funcionário</th>
                         <th>Data</th>
                         <th>Entrada</th>
@@ -129,6 +140,10 @@ Gera estritamente o array JSON abaixo, sem texto antes ou depois:
                     <% if (horarios && horarios.length > 0) { %>
                         <% horarios.forEach(h => { %>
                             <tr>
+                                <td style="text-align: center;">
+                                    <!-- A checkbox está associada ao formulário exterior através do atributo form -->
+                                    <input type="checkbox" name="ids_apagar" value="<%= h.id %>" form="form-apagar-multiplos" class="horario-checkbox">
+                                </td>
                                 <form action="/admin/horario/editar/<%= h.id %>" method="POST">
                                     <td><%= h.username %></td>
                                     <td><input type="text" name="data" value="<%= h.data %>" size="9" required></td>
@@ -151,13 +166,21 @@ Gera estritamente o array JSON abaixo, sem texto antes ou depois:
                         <% }) %>
                     <% } else { %>
                         <tr>
-                            <td colspan="6" style="text-align: center; color: var(--text-muted, #777);">Sem horários registados.</td>
+                            <td colspan="7" style="text-align: center; color: var(--text-muted, #777);">Sem horários registados.</td>
                         </tr>
                     <% } %>
                 </tbody>
             </table>
         </div>
     </div>
+
+    <script>
+        // Função para selecionar/desselecionar todas as checkboxes de uma vez
+        function toggleSelectAll(source) {
+            const checkboxes = document.querySelectorAll('.horario-checkbox');
+            checkboxes.forEach(cb => cb.checked = source.checked);
+        }
+    </script>
 
     <script>
         window.addEventListener('DOMContentLoaded', () => {
